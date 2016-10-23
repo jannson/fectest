@@ -40,6 +40,12 @@ void test_001(void) {
     unsigned char* data_blocks[128];
     unsigned char* fec_blocks[128];
     int nrFecBlocks = 6;
+
+    //decode
+    unsigned int fec_block_nos[128], erased_blocks[128];
+    unsigned char* dec_fec_blocks[128];
+    int nr_fec_blocks;
+
     int i;
 
     for(i = 0; i < nrDataBlocks; i++) {
@@ -53,8 +59,30 @@ void test_001(void) {
     }
 
     fec_encode(block_size, data_blocks, nrDataBlocks, fec_blocks, nrFecBlocks);
-
     print_buf((gf*)output, "0x%02x ", nrFecBlocks+nrDataBlocks);
+
+    text[1] = 'x';
+    text[3] = 'y';
+    text[4] = 'z';
+    erased_blocks[0] = 1;
+    erased_blocks[1] = 3;
+    erased_blocks[2] = 4;
+
+    fec_block_nos[0] = 2;
+    fec_block_nos[1] = 3;
+    fec_block_nos[2] = 5;
+    dec_fec_blocks[0] = fec_blocks[2];
+    dec_fec_blocks[1] = fec_blocks[3];
+    dec_fec_blocks[2] = fec_blocks[5];
+    nr_fec_blocks = 3;
+
+    printf("erased:%s\n", text);
+
+    fec_decode(block_size, data_blocks, nrDataBlocks, 
+               dec_fec_blocks, fec_block_nos, erased_blocks, 
+               (short)nr_fec_blocks);
+
+    printf("fixed:%s\n", text);
 }
 
 int main(void) {

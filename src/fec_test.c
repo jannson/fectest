@@ -104,9 +104,7 @@ int main(int argc, char **argv) {
 
     fprintf(stderr, "old:\n");
 
-    for(i=0; i<1024; i++)
-	zilch[i]=0;
-
+    memset(zilch, 0, sizeof(zilch));
     for(i=0; i < corrupted; i++) {	
 	int corr = random() % nrBlocks;
 	memset(data + blocksize * corr, 137, blocksize);
