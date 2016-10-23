@@ -34,9 +34,23 @@ void print_int(int* buf, char *fmt, size_t len) {
 }
 
 void test_001(void) {
+    //expTable
+    print_buf(gf_exp, "0x%02x ", sizeof(gf_exp)/sizeof(gf));
+
+    //logTable
+    print_int(gf_log, "%d ", sizeof(gf_log)/sizeof(int));
+
+    //inverse
+    print_buf(inverse, "0x%02x ", sizeof(inverse)/sizeof(gf));
+
+    //mulTable
+    print_buf(gf_mul_table, "0x%02x ", sizeof(gf_mul_table)/sizeof(gf));
+}
+
+void test_002(void) {
     char text[] = "hello world", output[256];
     int block_size = 1;
-    int nrDataBlocks = sizeof(text)/sizeof(char);
+    int nrDataBlocks = sizeof(text)/sizeof(char) - 1;
     unsigned char* data_blocks[128];
     unsigned char* fec_blocks[128];
     int nrFecBlocks = 6;
@@ -59,7 +73,7 @@ void test_001(void) {
     }
 
     fec_encode(block_size, data_blocks, nrDataBlocks, fec_blocks, nrFecBlocks);
-    print_buf((gf*)output, "0x%02x ", nrFecBlocks+nrDataBlocks);
+    print_buf((gf*)output, "%d ", nrFecBlocks+nrDataBlocks);
 
     text[1] = 'x';
     text[3] = 'y';
@@ -88,20 +102,9 @@ void test_001(void) {
 int main(void) {
     fec_init();
 
-    //expTable
-    print_buf(gf_exp, "0x%02x ", sizeof(gf_exp)/sizeof(gf));
 
-    //logTable
-    print_int(gf_log, "%d ", sizeof(gf_log)/sizeof(int));
-
-    //inverse
-    print_buf(inverse, "0x%02x ", sizeof(inverse)/sizeof(gf));
-
-    //mulTable
-    //print_buf(gf_mul_table, "0x%02x ", sizeof(gf_mul_table)/sizeof(gf));
-
-    printf("test001:\n");
-    test_001();
+    printf("test002:\n");
+    test_002();
     return 0;
 }
 
