@@ -34,6 +34,8 @@ void print_int(int* buf, char *fmt, size_t len) {
 }
 
 void test_001(void) {
+    printf("%s:\n", __FUNCTION__);
+
     //expTable
     print_buf(gf_exp, "0x%02x ", sizeof(gf_exp)/sizeof(gf));
 
@@ -44,7 +46,7 @@ void test_001(void) {
     print_buf(inverse, "0x%02x ", sizeof(inverse)/sizeof(gf));
 
     //mulTable
-    print_buf(gf_mul_table, "0x%02x ", sizeof(gf_mul_table)/sizeof(gf));
+    //print_buf(gf_mul_table, "0x%02x ", sizeof(gf_mul_table)/sizeof(gf));
 }
 
 void test_002(void) {
@@ -61,6 +63,8 @@ void test_002(void) {
     int nr_fec_blocks;
 
     int i;
+
+    printf("%s:\n", __FUNCTION__);
 
     for(i = 0; i < nrDataBlocks; i++) {
         data_blocks[i] = (unsigned char*)&text[i];
@@ -92,19 +96,44 @@ void test_002(void) {
 
     printf("erased:%s\n", text);
 
-    fec_decode(block_size, data_blocks, nrDataBlocks, 
-               dec_fec_blocks, fec_block_nos, erased_blocks, 
+    fec_decode(block_size, data_blocks, nrDataBlocks,
+               dec_fec_blocks, fec_block_nos, erased_blocks,
                (short)nr_fec_blocks);
 
     printf("fixed:%s\n", text);
 }
 
+void test_003(void) {
+    int i, j;
+    int a1, a2, a3, a4;
+
+    printf("%s:\n", __FUNCTION__);
+
+    i = 3*8;
+    j = 3*5;
+    a1 = gf_exp[modnn(gf_log[i] + gf_log[j]) ];
+
+    i = 1*8;
+    j = 3*5*3;
+    a2 = gf_exp[modnn(gf_log[i] + gf_log[j]) ];
+
+    i = 3*8*3;
+    j = 1*5;
+    a3 = gf_exp[modnn(gf_log[i] + gf_log[j]) ];
+
+    i = 1;
+    j = (3*8*3*5) % 255;
+    a4 = gf_exp[modnn(gf_log[i] + gf_log[j]) ];
+
+    printf("a1=%d a2=%d a3=%d a4=%d\n", a1, a2, a3, a4);
+}
+
 int main(void) {
     fec_init();
 
-
-    printf("test002:\n");
-    test_002();
+    //test_001();
+    //test_002();
+    test_003();
     return 0;
 }
 
