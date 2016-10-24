@@ -96,7 +96,7 @@ gf* matrix_T(gf* b, int br, int bc) {
 
 gf* multiply1(gf* a, int ar, int ac, gf* b, int br, int bc) {
     gf *new_m, *new_b, tg;
-    int r, c, ptr, i;
+    int r, c, i;
 
     assert(ac == br);   //columns of a equal rows of b
 
@@ -116,7 +116,7 @@ gf* multiply1(gf* a, int ar, int ac, gf* b, int br, int bc) {
     for(r = 0; r < ar; r++) {
         for(c = 0; c < bc; c++) {
             tg = 0;
-            for(i = 0; i < ar; i++) {
+            for(i = 0; i < ac; i++) {
                 tg ^= gf_mul_table[ (a[r*ac + i] << 8) + b[i*bc + c] ];
             }
             new_m[r*bc + c] = tg;
@@ -139,6 +139,23 @@ gf* vandermonde(int nrows, int ncols) {
     }
 
     return matrix;
+}
+
+void codeSomeShards(gf* matrixRows, gf* bshards, int dataShards, int parityShards, int byteCount) {
+    gf* outputs = &bshards[dataShards*byteCount];
+    gf* in;
+    int r, c;
+
+    for(c = 0; c < dataShards; c++) {
+        in = &bshards[c*byteCount];
+        for(r = 0; r < parityShards; r++) {
+            if(0 == c) {
+                mul(&outputs[r*byteCount], in, matrixRows[r*dataShards + c], byteCount);
+            } else {
+                addmul(&outputs[r*byteCount], in, matrixRows[r*dataShards + c], byteCount);
+            }
+        }
+    }
 }
 
 void test_001(void) {
@@ -237,24 +254,36 @@ void test_003(void) {
 }
 
 void test_004(void) {
-    gf* matrix, *top, *mt, *rm;
+    gf* matrix, *top, *mt, *r_m, *parity, *bshards;
     int shards = 17;
     int dataShards = 11;
     int parityShards = 6;
 
+    //initialize
     matrix = vandermonde(shards, dataShards);
-    print_matrix1(matrix, shards, dataShards);
-    mt = matrix_T(matrix, shards, dataShards);
-    print_matrix1(mt, dataShards, shards);
+    //print_matrix1(matrix, shards, dataShards);
+    //mt = matrix_T(matrix, shards, dataShards);
+    //print_matrix1(mt, dataShards, shards);
 
     top = submatrix(matrix, 0, 0, dataShards, dataShards, shards, dataShards);
-    print_matrix1(top, dataShards, dataShards);
+    //print_matrix1(top, dataShards, dataShards);
 
     invert_mat(top, dataShards);
-    print_matrix1(top, dataShards, dataShards);
+    //print_matrix1(top, dataShards, dataShards);
 
-    rm = multiply1(matrix, shards, dataShards, top, dataShards, dataShards);
-    print_matrix1(rm, shards, dataShards);
+    r_m = multiply1(matrix, shards, dataShards, top, dataShards, dataShards);
+    //print_matrix1(r_m, shards, dataShards);
+
+    parity = submatrix(r_m, dataShards, 0, shards, dataShards, shards, dataShards);
+    printf("parity:\n");
+    print_matrix1(parity, parityShards, dataShards);
+
+    bshards = (gf*)calloc(1, shards);
+    memcpy(bshards, "hello world", dataShards); //hard code for test
+    //printf("bshards=%s\n", (char*)bshards);
+    print_buf(bshards, "%d ", dataShards);
+    codeSomeShards(parity, bshards, dataShards, parityShards, 1);
+    print_buf(bshards, "%d ", shards);
 }
 
 int main(void) {

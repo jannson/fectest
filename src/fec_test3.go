@@ -22,7 +22,7 @@ func main() {
 
 	err = enc.Encode(shards)
 	checkErr(err)
-	//fmt.Println(shards)
+	fmt.Println(shards)
 
 	dec, err := reedsolomon.New(dataShards, parShards)
 	checkErr(err)
