@@ -33,6 +33,114 @@ void print_int(int* buf, char *fmt, size_t len) {
     printf("\n");
 }
 
+void print_matrix1(gf* matrix, int nrows, int ncols) {
+    int i, j;
+    for(i = 0; i < nrows; i++) {
+        for(j = 0; j < ncols; j++) {
+            printf("%6d ", matrix[i*ncols + j]);
+        }
+        printf("\n");
+    }
+    printf("end\n");
+}
+
+gf galExp(gf a, gf n) {
+    int logA;
+    int logResult;
+
+    if(0 == n) {
+        return 1;
+    }
+    if(0 == a) {
+        return 0;
+    }
+
+    logA = gf_log[a];
+    logResult = logA * n;
+    while(logResult >= 255) {
+        logResult -= 255;
+    }
+
+    return gf_exp[logResult];
+}
+
+gf* submatrix(gf* matrix, int rmin, int cmin, int rmax, int cmax, int nrows, int ncols) {
+    int i, j;
+    gf* new_m = (gf*)malloc((rmax-rmin) * (cmax-cmin));
+    assert(NULL != new_m);
+
+    for(i = rmin; i < rmax; i++) {
+        for(j = cmin; j < cmax; j++) {
+            new_m[ (i-rmin)*(cmax-cmin) + (j-cmin) ] = matrix[i*ncols + j];
+        }
+    }
+
+    return new_m;
+}
+
+gf* matrix_T(gf* b, int br, int bc) {
+    gf* new_b;
+    int r, c, i = 0;
+
+    new_b = (gf*)malloc(br*bc);
+    assert(NULL != new_b);
+
+    for(c = 0; c < bc; c++) {
+        for(r = 0; r < br; r++) {
+            new_b[i++] = b[bc*r+c];
+        }
+    }
+
+    return new_b;
+}
+
+gf* multiply1(gf* a, int ar, int ac, gf* b, int br, int bc) {
+    gf *new_m, *new_b, tg;
+    int r, c, ptr, i;
+
+    assert(ac == br);   //columns of a equal rows of b
+
+    new_m = (gf*)calloc(1, ar * bc);
+    assert(NULL != new_m);
+
+    //TODO better cache
+    /* new_b = matrix_T(b, br, bc);
+    ptr = 0;
+    for(r = 0; r < ar; r++) {
+        mul(&new_m[r], &new_b[0], a[ptr++], ac);
+        for(c = 1; c < ac; c++, ptr++) {
+            addmul(&new_m[r], &new_b[c*br], a[ptr], ac);
+        }
+    } */
+
+    for(r = 0; r < ar; r++) {
+        for(c = 0; c < bc; c++) {
+            tg = 0;
+            for(i = 0; i < ar; i++) {
+                tg ^= gf_mul_table[ (a[r*ac + i] << 8) + b[i*bc + c] ];
+            }
+            new_m[r*bc + c] = tg;
+        }
+    }
+
+    //free(new_b);
+    return new_m;
+}
+
+gf* vandermonde(int nrows, int ncols) {
+    int row, col;
+    gf* matrix = (gf*)calloc(1, nrows * ncols);
+    assert(NULL != matrix);
+
+    for(row = 0; row < nrows; row++) {
+        for(col = 0; col < ncols; col++) {
+            matrix[row*ncols + col] = galExp((gf)row, (gf)col);
+        }
+    }
+
+    return matrix;
+}
+
 void test_001(void) {
     printf("%s:\n", __FUNCTION__);
 
@@ -128,12 +236,34 @@ void test_003(void) {
     printf("a1=%d a2=%d a3=%d a4=%d\n", a1, a2, a3, a4);
 }
 
+void test_004(void) {
+    gf* matrix, *top, *mt, *rm;
+    int shards = 17;
+    int dataShards = 11;
+    int parityShards = 6;
+
+    matrix = vandermonde(shards, dataShards);
+    print_matrix1(matrix, shards, dataShards);
+    mt = matrix_T(matrix, shards, dataShards);
+    print_matrix1(mt, dataShards, shards);
+
+    top = submatrix(matrix, 0, 0, dataShards, dataShards, shards, dataShards);
+    print_matrix1(top, dataShards, dataShards);
+
+    invert_mat(top, dataShards);
+    print_matrix1(top, dataShards, dataShards);
+
+    rm = multiply1(matrix, shards, dataShards, top, dataShards, dataShards);
+    print_matrix1(rm, shards, dataShards);
+}
+
 int main(void) {
     fec_init();
 
     //test_001();
     //test_002();
-    test_003();
+    //test_003();
+    test_004();
     return 0;
 }
 
