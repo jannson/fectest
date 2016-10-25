@@ -31,7 +31,6 @@ func main() {
 	shards[1] = nil
 	shards[3] = nil
 	shards[4] = nil
-	shards[5] = nil
 	//fmt.Println(shards)
 
 	err = dec.Reconstruct(shards)

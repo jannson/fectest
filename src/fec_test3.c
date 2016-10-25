@@ -95,7 +95,7 @@ gf* matrix_T(gf* b, int br, int bc) {
 }
 
 gf* multiply1(gf* a, int ar, int ac, gf* b, int br, int bc) {
-    gf *new_m, *new_b, tg;
+    gf *new_m, tg;
     int r, c, i;
 
     assert(ac == br);   //columns of a equal rows of b
@@ -141,14 +141,13 @@ gf* vandermonde(int nrows, int ncols) {
     return matrix;
 }
 
-void codeSomeShards(gf* matrixRows, gf* bshards, int dataShards, int parityShards, int byteCount) {
-    gf* outputs = &bshards[dataShards*byteCount];
+void codeSomeShards(gf* matrixRows, gf* intputs, gf* outputs, int dataShards, int outputCount, int byteCount) {
     gf* in;
     int r, c;
 
     for(c = 0; c < dataShards; c++) {
-        in = &bshards[c*byteCount];
-        for(r = 0; r < parityShards; r++) {
+        in = &intputs[c*byteCount];
+        for(r = 0; r < outputCount; r++) {
             if(0 == c) {
                 mul(&outputs[r*byteCount], in, matrixRows[r*dataShards + c], byteCount);
             } else {
@@ -254,10 +253,11 @@ void test_003(void) {
 }
 
 void test_004(void) {
-    gf* matrix, *top, *mt, *r_m, *parity, *bshards;
+    gf* matrix, *top, *r_m, *parity, *bshards, *outputs;
     int shards = 17;
     int dataShards = 11;
     int parityShards = 6;
+    int byteCount = 1;
 
     //initialize
     matrix = vandermonde(shards, dataShards);
@@ -278,12 +278,70 @@ void test_004(void) {
     printf("parity:\n");
     print_matrix1(parity, parityShards, dataShards);
 
+    //encode here
     bshards = (gf*)calloc(1, shards);
     memcpy(bshards, "hello world", dataShards); //hard code for test
-    //printf("bshards=%s\n", (char*)bshards);
+    outputs = &bshards[dataShards*byteCount];
     print_buf(bshards, "%d ", dataShards);
-    codeSomeShards(parity, bshards, dataShards, parityShards, 1);
+    codeSomeShards(parity, bshards, outputs, dataShards, parityShards, byteCount);
     print_buf(bshards, "%d ", shards);
+
+    //decode here
+    {
+        gf *subm, *subShards, *sub_parity;
+        int i, c, shardLens[128], subMatrixRow, outputCount;
+
+        for(i = 0; i < shards; i++) {
+            shardLens[i] = byteCount;
+        }
+
+        printf("the lost is: (1:%d) (3:%d) (4:%d)\n", bshards[1], bshards[3],  bshards[4]);
+
+        //force error
+        bshards[1] = 'x';
+        bshards[3] = 'y';
+        bshards[4] = 'z';
+
+        shardLens[1] = 0;
+        shardLens[3] = 0;
+        shardLens[4] = 0;
+
+        subm = (gf*)malloc(dataShards * dataShards);
+        subShards = (gf*)malloc(dataShards);
+        subMatrixRow = 0;
+        for(i = 0; i < shards && subMatrixRow < dataShards; i++) {
+            if(shardLens[i] != 0) {
+                for(c = 0; c < dataShards; c++) {
+                    subm[subMatrixRow*dataShards + c] = r_m[i*dataShards + c];
+                }
+
+                subShards[subMatrixRow] = bshards[i];
+                subMatrixRow++;
+            }
+        }
+
+        invert_mat(subm, dataShards);
+        printf("decodeMatrix:\n");
+        print_matrix1(subm, dataShards, dataShards);
+        outputs = (gf*)calloc(1, parityShards*byteCount);
+        sub_parity = (gf*)calloc(1, parityShards*dataShards);
+        outputCount = 0;
+        for(i = 0; i < dataShards; i++) {
+            if(0 == shardLens[i]) {
+                //outputs[outputCount] = bshards[i]; TODO use reference
+                memcpy(&sub_parity[outputCount * dataShards], &subm[i*dataShards], dataShards);
+                outputCount++;
+            }
+        }
+        printf("subMatrixRow:%d dataShards:%d outputCount:%d\n", subMatrixRow, dataShards, outputCount);
+        print_matrix1(sub_parity, outputCount, dataShards);
+        print_matrix1(subShards, 1, dataShards);
+
+        //sub_parity * subShards = outputs
+        codeSomeShards(sub_parity, subShards, outputs, dataShards, outputCount, byteCount); 
+        printf("found lost:\n");
+        print_buf(outputs, "%d ", 3);
+    }
 }
 
 int main(void) {
