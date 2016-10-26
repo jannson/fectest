@@ -270,15 +270,15 @@ int reed_solomon_encode(reed_solomon* rs,
 /** input:
  * rs
  * original data_blocks[rs->data_shards][block_size]
- * original fec_blocks[rs->data_shards][block_size]
- * nr_fec_blocks: the number of erased blocks
+ * dec_fec_blocks[nr_fec_blocks][block_size]
  * fec_block_nos: fec pos number in original fec_blocks
  * erased_blocks: erased blocks in original data_blocks
+ * nr_fec_blocks: the number of erased blocks
  * */
 int reed_solomon_decode(reed_solomon* rs,
         unsigned char **data_blocks,
-        unsigned char **fec_blocks,
         int block_size,
+        unsigned char **dec_fec_blocks,
         unsigned int *fec_block_nos,
         unsigned int *erased_blocks,
         int nr_fec_blocks) {
@@ -316,21 +316,26 @@ int reed_solomon_decode(reed_solomon* rs,
     nos = 0;
     nshards = 0;
     dataShards = rs->data_shards;
-    for(i = 0; i < rs->shards && subMatrixRow < dataShards; i++) {
+    for(i = 0; i < dataShards; i++) {
         if(i != erased_blocks[j]) {
             /* this row is ok */
             for(c = 0; c < dataShards; c++) {
                 dataDecodeMatrix[subMatrixRow*dataShards + c] = m[i*dataShards + c];
             }
-            if(i < dataShards) {
-                subShards[subMatrixRow] = data_blocks[i];
-            } else {
-                subShards[subMatrixRow] = fec_blocks[fec_block_nos[nos++]];
-            }
+            subShards[subMatrixRow] = data_blocks[i];
             subMatrixRow++;
         } else {
             j++;
         }
+    }
+
+    for(i = 0; i < nr_fec_blocks && subMatrixRow < dataShards; i++) {
+        subShards[subMatrixRow] = dec_fec_blocks[i];
+        j = dataShards + fec_block_nos[i];
+        for(c = 0; c < dataShards; c++) {
+            dataDecodeMatrix[subMatrixRow*dataShards + c] = m[j*dataShards + c]; //use spefic pos of original fec_blocks
+        }
+        subMatrixRow++;
     }
 
     if(subMatrixRow < dataShards) {
@@ -339,10 +344,10 @@ int reed_solomon_decode(reed_solomon* rs,
     }
 
     invert_mat(dataDecodeMatrix, dataShards);
-    printf("invert:\n");
-    print_matrix1(dataDecodeMatrix, dataShards, dataShards);
-    printf("nShards:\n");
-    print_matrix2(subShards, dataShards, block_size);
+    //printf("invert:\n");
+    //print_matrix1(dataDecodeMatrix, dataShards, dataShards);
+    //printf("nShards:\n");
+    //print_matrix2(subShards, dataShards, block_size);
 
     for(i = 0; i < nr_fec_blocks; i++) {
         j = erased_blocks[i];
@@ -350,11 +355,11 @@ int reed_solomon_decode(reed_solomon* rs,
         //data_blocks[j][0] = 0;
         memmove(dataDecodeMatrix+i*dataShards, dataDecodeMatrix+j*dataShards, dataShards);
     }
-    printf("subMatrixRow:\n");
-    print_matrix1(dataDecodeMatrix, nr_fec_blocks, dataShards);
+    //printf("subMatrixRow:\n");
+    //print_matrix1(dataDecodeMatrix, nr_fec_blocks, dataShards);
 
-    printf("outputs:\n");
-    print_matrix2(outputs, nr_fec_blocks, block_size);
+    //printf("outputs:\n");
+    //print_matrix2(outputs, nr_fec_blocks, block_size);
 
     return code_some_shards(dataDecodeMatrix, subShards, outputs,
             dataShards, nr_fec_blocks, block_size);
@@ -404,17 +409,17 @@ void test_002(void) {
     erased_blocks[1] = 3;
     erased_blocks[2] = 4;
 
-    fec_block_nos[0] = 2;
+    fec_block_nos[0] = 1;
     fec_block_nos[1] = 3;
     fec_block_nos[2] = 5;
-    dec_fec_blocks[0] = fec_blocks[2];
+    dec_fec_blocks[0] = fec_blocks[1];
     dec_fec_blocks[1] = fec_blocks[3];
     dec_fec_blocks[2] = fec_blocks[5];
     nr_fec_blocks = 3;
 
     printf("erased:%s\n", text);
 
-    reed_solomon_decode(rs, data_blocks, fec_blocks, block_size,
+    reed_solomon_decode(rs, data_blocks, block_size, dec_fec_blocks,
             fec_block_nos, erased_blocks, nr_fec_blocks);
 
     printf("fixed:%s\n", text);
