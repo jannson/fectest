@@ -272,7 +272,8 @@ void test_004(void) {
     //print_matrix1(top, dataShards, dataShards);
 
     r_m = multiply1(matrix, shards, dataShards, top, dataShards, dataShards);
-    //print_matrix1(r_m, shards, dataShards);
+    printf("r_m:\n");
+    print_matrix1(r_m, shards, dataShards);
 
     parity = submatrix(r_m, dataShards, 0, shards, dataShards, shards, dataShards);
     printf("parity:\n");

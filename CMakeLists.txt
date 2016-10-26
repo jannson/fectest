@@ -11,7 +11,7 @@ SET(CMAKE_BUILD_TYPE release)
 
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
-add_executable(fec_test src/fec_test.c)
+add_executable(fec_test src/rs.c)
 target_link_libraries(fec_test)
 
 add_executable(fec_test3 src/fec_test3.c)
