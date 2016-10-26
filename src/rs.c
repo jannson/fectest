@@ -9,6 +9,7 @@
 
 #include "fec.c"
 
+#define DATA_SHARDS_MAX (255)
 #define RS_MALLOC(x)    malloc(x)
 #define RS_FREE(x)      free(x)
 #define RS_CALLOC(n, x) calloc(n, x)
@@ -22,12 +23,47 @@ typedef struct _reed_solomon {
 } reed_solomon;
 
 /* only for test */
+static void print_buf(gf* buf, char *fmt, size_t len) {
+    size_t i = 0;
+    while(i < len) {
+        printf(fmt, buf[i]);
+        i++;
+        if((i % 16) == 0) {
+            printf("\n");
+        }
+    }
+    printf("\n");
+}
+
+static void print_int(int* buf, char *fmt, size_t len) {
+    size_t i = 0;
+    while(i < len) {
+        printf(fmt, buf[i]);
+        i++;
+        if((i % 16) == 0) {
+            printf("\n");
+        }
+    }
+    printf("\n");
+}
+
 static void print_matrix1(gf* matrix, int nrows, int ncols) {
     int i, j;
     printf("matrix (%d,%d):\n", nrows, ncols);
     for(i = 0; i < nrows; i++) {
         for(j = 0; j < ncols; j++) {
             printf("%6d ", matrix[i*ncols + j]);
+        }
+        printf("\n");
+    }
+}
+
+static void print_matrix2(gf** matrix, int nrows, int ncols) {
+    int i, j;
+    printf("matrix (%d,%d):\n", nrows, ncols);
+    for(i = 0; i < nrows; i++) {
+        for(j = 0; j < ncols; j++) {
+            printf("%6d ", matrix[i][j]);
         }
         printf("\n");
     }
@@ -107,6 +143,25 @@ static gf* multiply1(gf *a, int ar, int ac, gf *b, int br, int bc) {
     return new_m;
 }
 
+/* copy from golang rs version */
+static int code_some_shards(gf* matrixRows, gf** inputs, gf** outputs,
+        int dataShards, int outputCount, int byteCount) {
+    gf* in;
+    int iRow, c;
+    for(c = 0; c < dataShards; c++) {
+        in = inputs[c];
+        for(iRow = 0; iRow < outputCount; iRow++) {
+            if(0 == c) {
+                mul(outputs[iRow], in, matrixRows[iRow*dataShards+c], byteCount);
+            } else {
+                addmul(outputs[iRow], in, matrixRows[iRow*dataShards+c], byteCount);
+            }
+        }
+    }
+
+    return 0;
+}
+
 reed_solomon* reed_solomon_new(int data_shards, int parity_shards) {
     gf* vm = NULL;
     gf* top = NULL;
@@ -124,7 +179,7 @@ reed_solomon* reed_solomon_new(int data_shards, int parity_shards) {
         rs->m = NULL;
         rs->parity = NULL;
 
-        if(rs->shards > 255 || data_shards <= 0 || parity_shards <= 0) {
+        if(rs->shards > DATA_SHARDS_MAX || data_shards <= 0 || parity_shards <= 0) {
             err = 1;
             break;
         }
@@ -196,18 +251,113 @@ void reed_solomon_release(reed_solomon* rs) {
     }
 }
 
-int reed_solomon_encode(reed_solomon* rs, unsigned char** data_blocks, unsigned char** fec_blocks, int block_size) {
-    return 0;
+/**
+ * input:
+ * rs
+ * data_blocks[rs->data_shards][block_size]
+ * fec_blocks[rs->data_shards][block_size]
+ * */
+int reed_solomon_encode(reed_solomon* rs,
+        unsigned char** data_blocks,
+        unsigned char** fec_blocks,
+        int block_size) {
+    assert(NULL != rs && NULL != rs->parity);
+
+    return code_some_shards(rs->parity, data_blocks, fec_blocks
+            , rs->data_shards, rs->parity_shards, block_size);
 }
 
-int reed_solomon_encode(reed_solomon* rs,
+/** input:
+ * rs
+ * original data_blocks[rs->data_shards][block_size]
+ * original fec_blocks[rs->data_shards][block_size]
+ * nr_fec_blocks: the number of erased blocks
+ * fec_block_nos: fec pos number in original fec_blocks
+ * erased_blocks: erased blocks in original data_blocks
+ * */
+int reed_solomon_decode(reed_solomon* rs,
         unsigned char **data_blocks,
-        int block_size, 
-        unsigned char **dec_fec_blocks, 
+        unsigned char **fec_blocks,
+        int block_size,
         unsigned int *fec_block_nos,
         unsigned int *erased_blocks,
         int nr_fec_blocks) {
-    return 0;
+    /* use stack instead of malloc, define a small number of DATA_SHARDS_MAX to save memory */
+    gf dataDecodeMatrix[DATA_SHARDS_MAX*DATA_SHARDS_MAX];
+    unsigned char* subShards[DATA_SHARDS_MAX];
+    unsigned char* outputs[DATA_SHARDS_MAX];
+    gf* m = rs->m;
+    int i, j, c, swap, subMatrixRow, dataShards, nos, nshards;
+
+    /* the erased_blocks should always sorted
+     * if sorted, nr_fec_blocks times to check it
+     * if not, sort it here
+     * */
+    for(i = 0; i < nr_fec_blocks; i++) {
+        swap = 0;
+        for(j = i+1; j < nr_fec_blocks; j++) {
+            if(erased_blocks[i] > erased_blocks[j]) {
+                /* the prefix is bigger than the following, swap */
+                c = erased_blocks[i];
+                erased_blocks[i] = erased_blocks[j];
+                erased_blocks[j] = c;
+
+                swap = 1;
+            }
+        }
+        if(!swap) {
+            //already sorted or sorted ok
+            break;
+        }
+    }
+
+    j = 0;
+    subMatrixRow = 0;
+    nos = 0;
+    nshards = 0;
+    dataShards = rs->data_shards;
+    for(i = 0; i < rs->shards && subMatrixRow < dataShards; i++) {
+        if(i != erased_blocks[j]) {
+            /* this row is ok */
+            for(c = 0; c < dataShards; c++) {
+                dataDecodeMatrix[subMatrixRow*dataShards + c] = m[i*dataShards + c];
+            }
+            if(i < dataShards) {
+                subShards[subMatrixRow] = data_blocks[i];
+            } else {
+                subShards[subMatrixRow] = fec_blocks[fec_block_nos[nos++]];
+            }
+            subMatrixRow++;
+        } else {
+            j++;
+        }
+    }
+
+    if(subMatrixRow < dataShards) {
+        //cannot correct
+        return -1;
+    }
+
+    invert_mat(dataDecodeMatrix, dataShards);
+    printf("invert:\n");
+    print_matrix1(dataDecodeMatrix, dataShards, dataShards);
+    printf("nShards:\n");
+    print_matrix2(subShards, dataShards, block_size);
+
+    for(i = 0; i < nr_fec_blocks; i++) {
+        j = erased_blocks[i];
+        outputs[i] = data_blocks[j];
+        //data_blocks[j][0] = 0;
+        memmove(dataDecodeMatrix+i*dataShards, dataDecodeMatrix+j*dataShards, dataShards);
+    }
+    printf("subMatrixRow:\n");
+    print_matrix1(dataDecodeMatrix, nr_fec_blocks, dataShards);
+
+    printf("outputs:\n");
+    print_matrix2(outputs, nr_fec_blocks, block_size);
+
+    return code_some_shards(dataDecodeMatrix, subShards, outputs,
+            dataShards, nr_fec_blocks, block_size);
 }
 
 void test_001(void) {
@@ -216,9 +366,64 @@ void test_001(void) {
     print_matrix1(rs->parity, rs->parity_shards, rs->data_shards);
 }
 
+void test_002(void) {
+    char text[] = "hello world", output[256];
+    int block_size = 1;
+    int nrDataBlocks = sizeof(text)/sizeof(char) - 1;
+    unsigned char* data_blocks[128];
+    unsigned char* fec_blocks[128];
+    int nrFecBlocks = 6;
+
+    //decode
+    unsigned int fec_block_nos[128], erased_blocks[128];
+    unsigned char* dec_fec_blocks[128];
+    int nr_fec_blocks;
+
+    int i;
+    reed_solomon* rs = reed_solomon_new(nrDataBlocks, nrFecBlocks);
+
+    printf("%s:\n", __FUNCTION__);
+
+    for(i = 0; i < nrDataBlocks; i++) {
+        data_blocks[i] = (unsigned char*)&text[i];
+    }
+
+    memset(output, 0, sizeof(output));
+    memcpy(output, text, nrDataBlocks);
+    for(i = 0; i < nrFecBlocks; i++) {
+        fec_blocks[i] = (unsigned char*)&output[i + nrDataBlocks];
+    }
+
+    reed_solomon_encode(rs, data_blocks, fec_blocks, block_size);
+    print_buf((gf*)output, "%d ", nrFecBlocks+nrDataBlocks);
+
+    text[1] = 'x';
+    text[3] = 'y';
+    text[4] = 'z';
+    erased_blocks[0] = 1;
+    erased_blocks[1] = 3;
+    erased_blocks[2] = 4;
+
+    fec_block_nos[0] = 2;
+    fec_block_nos[1] = 3;
+    fec_block_nos[2] = 5;
+    dec_fec_blocks[0] = fec_blocks[2];
+    dec_fec_blocks[1] = fec_blocks[3];
+    dec_fec_blocks[2] = fec_blocks[5];
+    nr_fec_blocks = 3;
+
+    printf("erased:%s\n", text);
+
+    reed_solomon_decode(rs, data_blocks, fec_blocks, block_size,
+            fec_block_nos, erased_blocks, nr_fec_blocks);
+
+    printf("fixed:%s\n", text);
+}
+
 int main(void) {
     fec_init();
-    test_001();
+    //test_001();
+    test_002();
 
     return 0;
 }
